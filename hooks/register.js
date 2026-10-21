@@ -67,7 +67,6 @@ export function parseSuggestions(reply) {
     .filter((s) => typeof s === 'string')
     .map((s) => s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').replace(/^["'`]|["'`,]$/g, '').trim())
     .filter((s) => s.length > 0)
-    .map((s) => clip(s, MAX_LEN))
     .slice(0, 4)
 }
 
