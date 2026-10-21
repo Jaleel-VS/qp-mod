@@ -1,6 +1,6 @@
 // Quick prompts: after each finished turn, show four follow-up prompts in the
-// band above the prompt. Type 1-4 into an empty prompt (and pause) to send one,
-// or `/qp edit N` to put it in the prompt box first.
+// band above the prompt. Type 1-4 into an empty prompt (and pause) to put one in
+// the prompt box, then press Enter to send it or edit it first. `/qp N` sends at once.
 //
 // Modes (`/qp <mode>`, remembered across sessions):
 //   smart  a side request suggests four follow-ups from the last exchange
@@ -236,7 +236,7 @@ export function register(on) {
       children: [
         status === 'thinking'
           ? `quick prompts · ${label} · thinking…`
-          : `quick prompts · ${label}   (type 1-4 to send · /qp edit N · /qp off)`,
+          : `quick prompts · ${label}   (type 1-4 to pick · Enter to send · /qp off)`,
       ],
     })
 
@@ -257,7 +257,7 @@ export function register(on) {
         hotkey: String(i + 1),
         plain: true,
         onPress: async () => {
-          await pick($, i + 1, true)
+          await pick($, i + 1, false)
         },
       })
 

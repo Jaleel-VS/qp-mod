@@ -1,9 +1,9 @@
 # qp: quick prompts for Claude Code
 
-A Claude Code mod that suggests four follow-up prompts after each turn, in the band above the prompt box. Type `1`–`4` into an empty prompt and pause to send one.
+A Claude Code mod that suggests four follow-up prompts after each turn, in the band above the prompt box. Type `1`–`4` into an empty prompt and pause to put one in the prompt box, then press Enter to send it or edit it first.
 
 ```text
-quick prompts · smart · haiku   (type 1-4 to send · /qp edit N · /qp off)
+quick prompts · smart · haiku   (type 1-4 to pick · Enter to send · /qp off)
 1: Run the tests and smoke-check the band hotkeys
 2: Add a unit test for parseSuggestions
 3: Why does $.model.fork need the final answer passed in?
@@ -39,8 +39,8 @@ export CLAUDE_CODE_PLUGIN_DIRS=/path/to/qp-mod
 
 | Action | How |
 |---|---|
-| Send suggestion N | Type `N` into an empty prompt and pause, or run `/qp N` |
-| Put suggestion N in the prompt box to edit first | `/qp edit N` |
+| Put suggestion N in the prompt box | Type `N` into an empty prompt and pause, or run `/qp edit N`. Press Enter to send it, or edit it first. |
+| Send suggestion N at once | `/qp N` |
 | Show the current mode and model | `/qp` |
 | Change mode | `/qp smart`, `/qp learn`, `/qp fixed`, or `/qp off` |
 | Change the model behind smart and learn | `/qp model haiku` or `/qp model session` |
@@ -72,8 +72,8 @@ If a smart or learn request fails, takes more than 30 seconds, or its reply can'
 - Suggestions appear only for the main conversation's turns that end with an answer. Subagent turns, interrupted turns, and errors are skipped.
 - Suggestions clear when the next turn starts, so a stale set is never sent.
 - The band is shared with other mods. qp draws other mods' band content above its own.
-- In a short terminal, qp drops its header and packs the suggestions into columns, so all four stay visible. A digit only sends a suggestion that's visible.
-- A message that is just a digit, typed and left alone, is sent as that suggestion. Keep typing to send your own text.
+- In a short terminal, qp drops its header and packs the suggestions into columns, so all four stay visible. A digit only picks a suggestion that's visible.
+- A message that is just a digit, typed and left alone, is replaced by that suggestion. Keep typing to send your own text.
 
 ## What it runs and costs
 
