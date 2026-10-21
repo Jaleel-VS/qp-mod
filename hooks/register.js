@@ -174,6 +174,18 @@ export function register(on) {
     return next(e)
   })
 
+  // A digit typed and sent at once beats the band's hotkey, which waits for a
+  // pause, so swap a bare 1-4 for that suggestion before the turn starts.
+  on('prompt.submit', async ($, e, next) => {
+    if (e.command || e.isMeta || e.origin.kind !== 'composer' || status !== 'shown') return next(e)
+    const n = /^\s*([1-4])\s*$/.exec(e.text)?.[1]
+    const suggestion = n && prompts[Number(n) - 1]
+    if (!suggestion) return next(e)
+    // Clear now, not at turn.start, so a second quick digit can't swap again.
+    await clear($)
+    return next({ ...e, text: suggestion })
+  })
+
   on('turn.start', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     turn = { tools: [], edited: false, failed: false }

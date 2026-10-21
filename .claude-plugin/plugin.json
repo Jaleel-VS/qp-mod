@@ -1,6 +1,6 @@
 {
   "name": "qp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Quick prompts: four follow-up prompts above the prompt after each turn",
   "author": { "name": "Jaleel-VS" },
   "license": "MIT"

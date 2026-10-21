@@ -73,7 +73,7 @@ If a smart or learn request fails, takes more than 30 seconds, or its reply can'
 - Suggestions clear when the next turn starts, so a stale set is never sent.
 - The band is shared with other mods. qp draws other mods' band content above its own.
 - In a short terminal, qp drops its header and packs the suggestions into columns, so all four stay visible. A digit only picks a suggestion that's visible.
-- A message that is just a digit, typed and left alone, is replaced by that suggestion. Keep typing to send your own text.
+- While suggestions are showing, a message that is just `1`–`4` becomes that suggestion, whether you pause or press Enter straight away. Type anything more to send your own text.
 
 ## What it runs and costs
 
