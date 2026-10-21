@@ -1,0 +1,14 @@
+{
+  "name": "qp",
+  "description": "qp: quick follow-up prompts for Claude Code",
+  "owner": {
+    "name": "Jaleel-VS"
+  },
+  "plugins": [
+    {
+      "name": "qp",
+      "source": "./",
+      "description": "Four follow-up prompts in the band above the prompt after each turn. Type 1-4 to send one. Smart, learn, fixed and off modes."
+    }
+  ]
+}
