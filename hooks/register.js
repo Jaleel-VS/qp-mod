@@ -10,6 +10,7 @@
 
 const MODES = ['smart', 'learn', 'fixed', 'off']
 const ANSWER_MAX = 6000
+const FORK_TIMEOUT_MS = 30000
 const MAX_LEN = 70
 
 const PROMPTS = {
@@ -89,12 +90,29 @@ async function suggest($, t) {
   // final answer, so hand the answer over explicitly (its tail matters most).
   const answer = t.answer.length > ANSWER_MAX ? '…' + t.answer.slice(-ANSWER_MAX) : t.answer
   const prompt = `The assistant's final reply this turn was:\n<reply>\n${answer}\n</reply>\n\n${PROMPTS[current]}`
-  const r = await $.model.fork({ prompt })
+  const r = await forkWithin($, prompt, FORK_TIMEOUT_MS)
   if (ticket !== generation) return
   const parsed = r.isAnswered ? parseSuggestions(r.text) : []
   prompts = parsed.length ? parsed : fixedPrompts(t)
   const why = r.isAnswered ? 'unparsed' : r.reason
-  await render($, 'shown', parsed.length ? current : `${current} failed (${why}), fixed`)
+  if (!parsed.length) $.ui.log(`qp: ${current} fell back to fixed prompts: ${why}`, { to: 'debug' })
+  render($, 'shown', parsed.length ? current : `${current} failed (${why}), fixed`)
+}
+
+// $.model.fork takes no time limit, and a rejected call would leave the band on
+// "thinking…" for good, so bound it and turn a rejection into a reason.
+async function forkWithin($, prompt, ms) {
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = $.clock.after(ms, () => resolve({ isAnswered: false, reason: 'timed out' }))
+  })
+  try {
+    return await Promise.race([$.model.fork({ prompt }), timeout])
+  } catch (error) {
+    return { isAnswered: false, reason: error instanceof Error ? error.message : String(error) }
+  } finally {
+    timer?.cancel()
+  }
 }
 
 async function pick($, n, send) {
