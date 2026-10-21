@@ -3,14 +3,20 @@
 // or `/qp edit N` to put it in the prompt box first.
 //
 // Modes (`/qp <mode>`, remembered across sessions):
-//   smart  a forked side request suggests four follow-ups from the conversation
+//   smart  a side request suggests four follow-ups from the last exchange
 //   learn  the same, but the suggestions deepen understanding (why, what-if, quiz)
 //   fixed  no model call: four prompts picked from what the turn did
 //   off    nothing
+//
+// Models for smart and learn (`/qp model <model>`, remembered across sessions):
+//   haiku    Haiku reads the last exchange and a summary of the turn: fast, cheap
+//   session  a fork of the whole conversation on the session's model: sees every
+//            earlier turn, but resends the session's full context each time
 
 const MODES = ['smart', 'learn', 'fixed', 'off']
+const MODELS = ['haiku', 'session']
 const ANSWER_MAX = 6000
-const FORK_TIMEOUT_MS = 30000
+const REQUEST_TIMEOUT_MS = 30000
 const MAX_LEN = 70
 
 const PROMPTS = {
@@ -29,6 +35,8 @@ Reply with only a JSON array of 4 strings.`,
 }
 
 let mode = 'smart'
+let model = 'haiku'
+let userText = ''
 let prompts = []
 let status = 'idle' // 'idle' | 'thinking' | 'shown'
 let label = ''
@@ -80,34 +88,54 @@ async function clear($) {
 async function suggest($, t) {
   const ticket = ++generation
   const current = mode
+  const source = model
   if (current === 'fixed') {
     prompts = fixedPrompts(t)
     return render($, 'shown', 'fixed')
   }
   prompts = []
-  await render($, 'thinking', current)
-  // The fork replays the main thread's last request, which ends before this turn's
-  // final answer, so hand the answer over explicitly (its tail matters most).
-  const answer = t.answer.length > ANSWER_MAX ? '…' + t.answer.slice(-ANSWER_MAX) : t.answer
-  const prompt = `The assistant's final reply this turn was:\n<reply>\n${answer}\n</reply>\n\n${PROMPTS[current]}`
-  const r = await forkWithin($, prompt, FORK_TIMEOUT_MS)
+  render($, 'thinking', `${current} · ${source}`)
+  const r = await within($, () => request($, current, source, t), REQUEST_TIMEOUT_MS)
   if (ticket !== generation) return
   const parsed = r.isAnswered ? parseSuggestions(r.text) : []
   prompts = parsed.length ? parsed : fixedPrompts(t)
   const why = r.isAnswered ? 'unparsed' : r.reason
-  if (!parsed.length) $.ui.log(`qp: ${current} fell back to fixed prompts: ${why}`, { to: 'debug' })
-  render($, 'shown', parsed.length ? current : `${current} failed (${why}), fixed`)
+  if (!parsed.length) $.ui.log(`qp: ${current} (${source}) fell back to fixed prompts: ${why}`, { to: 'debug' })
+  render($, 'shown', parsed.length ? `${current} · ${source}` : `${current} · ${source} failed (${why}), fixed`)
+}
+
+const tail = (s) => (s.length > ANSWER_MAX ? '…' + s.slice(-ANSWER_MAX) : s)
+
+function turnSummary(t) {
+  const counts = {}
+  for (const name of t.tools) counts[name] = (counts[name] ?? 0) + 1
+  const tools = Object.entries(counts).map(([name, n]) => (n > 1 ? `${name}×${n}` : name))
+  const notes = [tools.length ? `tools used: ${tools.join(', ')}` : 'no tools used']
+  if (t.edited) notes.push('files were edited')
+  if (t.failed) notes.push('a tool call failed')
+  return notes.join('; ')
+}
+
+function request($, current, source, t) {
+  if (source === 'session') {
+    // The fork replays the main thread's last request, which ends before this turn's
+    // final answer, so hand the answer over explicitly (its tail matters most).
+    const prompt = `The assistant's final reply this turn was:\n<reply>\n${tail(t.answer)}\n</reply>\n\n${PROMPTS[current]}`
+    return $.model.fork({ prompt })
+  }
+  const exchange = `<user>\n${tail(t.userText)}\n</user>\n<assistant>\n${tail(t.answer)}\n</assistant>\n<turn>${turnSummary(t)}</turn>`
+  return $.model.complete({ model: 'haiku', system: PROMPTS[current], prompt: exchange, maxTokens: 300 })
 }
 
 // $.model.fork takes no time limit, and a rejected call would leave the band on
-// "thinking…" for good, so bound it and turn a rejection into a reason.
-async function forkWithin($, prompt, ms) {
+// "thinking…" for good, so bound every request and turn a rejection into a reason.
+async function within($, call, ms) {
   let timer
   const timeout = new Promise((resolve) => {
     timer = $.clock.after(ms, () => resolve({ isAnswered: false, reason: 'timed out' }))
   })
   try {
-    return await Promise.race([$.model.fork({ prompt }), timeout])
+    return await Promise.race([call(), timeout])
   } catch (error) {
     return { isAnswered: false, reason: error instanceof Error ? error.message : String(error) }
   } finally {
@@ -132,10 +160,12 @@ export function register(on) {
   on('session.start', async ($, e, next) => {
     const saved = await $.store.get('mode')
     if (MODES.includes(saved)) mode = saved
+    const savedModel = await $.store.get('model')
+    if (MODELS.includes(savedModel)) model = savedModel
     await $.command.register({
       name: 'qp',
-      description: 'Quick prompts: /qp [smart|learn|fixed|off|1-4|edit N]',
-      argumentHint: '[smart|learn|fixed|off|1-4|edit N]',
+      description: 'Quick prompts: /qp [smart|learn|fixed|off|model haiku|model session|1-4|edit N]',
+      argumentHint: '[smart|learn|fixed|off|model haiku|model session|1-4|edit N]',
     })
     return next(e)
   })
@@ -148,6 +178,7 @@ export function register(on) {
   on('turn.start', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     turn = { tools: [], edited: false, failed: false }
+    userText = e.text
     await clear($)
     return next(e)
   })
@@ -164,7 +195,7 @@ export function register(on) {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined || mode === 'off' || e.isAborted || e.reason !== 'answer') return next(e)
     if (!e.answer.trim()) return next(e)
-    const t = { ...turn, answer: e.answer, asked: endsWithQuestion(e.answer) }
+    const t = { ...turn, userText, answer: e.answer, asked: endsWithQuestion(e.answer) }
     // Don't hold the turn's end on the side request.
     void suggest($, t)
     return next(e)
@@ -172,16 +203,26 @@ export function register(on) {
 
   on('command.run', { command: 'qp' }, async ($, e) => {
     const [verb, arg] = (e.args || '').trim().split(/\s+/)
-    if (!verb) return { text: `Quick prompts: ${mode}${prompts.length ? ` · ${prompts.length} shown` : ''}` }
+    if (!verb) {
+      return { text: `Quick prompts: ${mode} · model ${model}${prompts.length ? ` · ${prompts.length} shown` : ''}` }
+    }
     if (MODES.includes(verb)) {
       mode = verb
       await $.store.set('mode', mode)
       await clear($)
       return { text: `Quick prompts: ${mode}` }
     }
+    if (verb === 'model') {
+      if (!arg) return { text: `Quick prompts model: ${model}` }
+      if (!MODELS.includes(arg)) return { text: 'Usage: /qp model [haiku|session]' }
+      model = arg
+      await $.store.set('model', model)
+      await clear($)
+      return { text: `Quick prompts model: ${model}` }
+    }
     if (/^[1-4]$/.test(verb)) return pick($, Number(verb), true)
     if (verb === 'edit' && /^[1-4]$/.test(arg ?? '')) return pick($, Number(arg), false)
-    return { text: 'Usage: /qp [smart|learn|fixed|off|1-4|edit N]' }
+    return { text: 'Usage: /qp [smart|learn|fixed|off|model haiku|model session|1-4|edit N]' }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -195,7 +236,7 @@ export function register(on) {
       wrap: 'truncate-end',
       children: [
         status === 'thinking'
-          ? `quick prompts · ${mode} · thinking…`
+          ? `quick prompts · ${label} · thinking…`
           : `quick prompts · ${label}   (type 1-4 to send · /qp edit N · /qp off)`,
       ],
     })
